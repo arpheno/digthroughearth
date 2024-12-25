@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Antipode Mapper</title>
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Leaflet for maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        #map-container {
+            display: flex;
+            gap: 20px;
+            height: 80vh;
+        }
+        .map {
+            flex: 1;
+            min-height: 400px;
+        }
+        .controls {
+            margin-bottom: 20px;
+        }
+        .city-buttons {
+            margin: 10px 0;
+        }
+        .city-button {
+            margin: 0 5px;
+            padding: 5px 10px;
+        }
+        .error {
+            color: red;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <h1>Antipode Mapper</h1>
+        <div class="controls">
+            <div>
+                <label>Latitude: <input type="number" v-model="lat" step="0.000001" min="-90" max="90"></label>
+                <label>Longitude: <input type="number" v-model="lng" step="0.000001" min="-180" max="180"></label>
+                <button @click="calculateAntipode">Find Antipode</button>
+                <button @click="getCurrentLocation">Use My Location</button>
+            </div>
+            <div class="city-search">
+                <input type="text" v-model="citySearch" placeholder="Enter city name">
+                <button @click="searchCity">Search City</button>
+            </div>
+            <div class="city-buttons">
+                <strong>Notable Antipode Pairs:</strong>
+                <button class="city-button" @click="loadCity('Madrid, Spain')">Madrid</button>
+                <button class="city-button" @click="loadCity('Santiago, Chile')">Santiago</button>
+                <button class="city-button" @click="loadCity('Buenos Aires, Argentina')">Buenos Aires</button>
+            </div>
+            <div v-if="error" class="error">{{ error }}</div>
+        </div>
+        <div id="map-container">
+            <div id="original-map" class="map"></div>
+            <div id="antipode-map" class="map"></div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue
+
+        createApp({
+            data() {
+                return {
+                    lat: 0,
+                    lng: 0,
+                    originalMap: null,
+                    antipodeMap: null,
+                    originalMarker: null,
+                    antipodeMarker: null,
+                    citySearch: '',
+                    error: null
+                }
+            },
+            mounted() {
+                // Initialize maps
+                this.originalMap = L.map('original-map').setView([0, 0], 2)
+                this.antipodeMap = L.map('antipode-map').setView([0, 0], 2)
+
+                // Add tile layers
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap contributors'
+                }).addTo(this.originalMap)
+
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap contributors'
+                }).addTo(this.antipodeMap)
+            },
+            methods: {
+                calculateAntipode() {
+                    this.error = null;
+                    // Calculate antipode coordinates
+                    const antipodeLat = -this.lat
+                    const antipodeLng = this.lng > 0 ? this.lng - 180 : this.lng + 180
+
+                    // Update original marker
+                    if (this.originalMarker) {
+                        this.originalMarker.remove()
+                    }
+                    this.originalMarker = L.marker([this.lat, this.lng]).addTo(this.originalMap)
+                    this.originalMap.setView([this.lat, this.lng], 5)
+
+                    // Update antipode marker
+                    if (this.antipodeMarker) {
+                        this.antipodeMarker.remove()
+                    }
+                    this.antipodeMarker = L.marker([antipodeLat, antipodeLng]).addTo(this.antipodeMap)
+                    this.antipodeMap.setView([antipodeLat, antipodeLng], 5)
+                },
+                getCurrentLocation() {
+                    if (!navigator.geolocation) {
+                        this.error = 'Geolocation is not supported by your browser';
+                        return;
+                    }
+
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                            this.lat = position.coords.latitude;
+                            this.lng = position.coords.longitude;
+                            this.calculateAntipode();
+                        },
+                        (error) => {
+                            this.error = `Unable to get location: ${error.message}`;
+                        }
+                    );
+                },
+                async searchCity() {
+                    if (!this.citySearch) {
+                        this.error = 'Please enter a city name';
+                        return;
+                    }
+
+                    try {
+                        const response = await fetch(`/api/geocode?city=${encodeURIComponent(this.citySearch)}`);
+                        if (!response.ok) {
+                            const data = await response.json();
+                            throw new Error(data.error || 'Failed to find city');
+                        }
+                        const data = await response.json();
+                        this.lat = data.lat;
+                        this.lng = data.lon;
+                        this.calculateAntipode();
+                    } catch (error) {
+                        this.error = error.message;
+                    }
+                },
+                loadCity(cityName) {
+                    this.citySearch = cityName;
+                    this.searchCity();
+                }
+            }
+        }).mount('#app')
+    </script>
+</body>
+</html> 
